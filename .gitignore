@@ -1,5 +1,7 @@
 __pycache__/
 *.py[cod]
+.env
+.env.*
 *$py.class
 *.egg-info/
 dist/

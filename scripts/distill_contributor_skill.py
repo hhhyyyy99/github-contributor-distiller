@@ -105,6 +105,16 @@ def email_local(email: str) -> str:
     return norm_text(email).split("@", 1)[0]
 
 
+def sanitize_for_output(value: str) -> str:
+    """Strip patterns that could be interpreted as prompt injection or markup injection."""
+    value = value or ""
+    value = re.sub(r"<!--.*?-->", "", value, flags=re.DOTALL)
+    value = re.sub(r"</?script[^>]*>", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"</?system[^>]*>", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", value)
+    return value.strip()
+
+
 def slugify(value: str, default: str = "contributor") -> str:
     value = norm_text(value)
     value = value.replace("@", "-")
@@ -141,7 +151,7 @@ def prepare_repo(repo_input: str, branch: Optional[str]) -> Tuple[Path, Optional
 def log_base_args(branch: Optional[str], since: Optional[str], until: Optional[str]) -> List[str]:
     args = ["log"]
     if branch:
-        args.append(branch)
+        args.extend(["--", branch])
     else:
         args.append("--all")
     if since:
@@ -287,7 +297,7 @@ def item_commit_count(item: Dict[str, Any]) -> int:
 def identities_from_commits(repo: Path, commit_hashes: Sequence[str], role: str) -> List[Dict[str, Any]]:
     resolved: Dict[Tuple[str, str], Dict[str, Any]] = {}
     for commit_hash in commit_hashes:
-        output = git(repo, ["show", "-s", f"--format=%aN{FIELD_SEP}%aE{FIELD_SEP}%cN{FIELD_SEP}%cE", commit_hash])
+        output = git(repo, ["show", "-s", f"--format=%aN{FIELD_SEP}%aE{FIELD_SEP}%cN{FIELD_SEP}%cE", "--", commit_hash])
         parts = output.strip().split(FIELD_SEP)
         if len(parts) != 4:
             continue
@@ -575,7 +585,7 @@ def render_skill_md(
     identities: Sequence[Dict[str, Any]],
     summary: Dict[str, Any],
 ) -> str:
-    identity_lines = [f"{item['name']} <{item['email']}>".strip() for item in identities]
+    identity_lines = [f"{sanitize_for_output(item['name'])} <{sanitize_for_output(item['email'])}>".strip() for item in identities]
     desc = (
         f"repo-specific contributor guidance distilled from git commit history. use when working in {slugify(repo_label)} "
         f"and asked to implement, modify, review, or explain code in a style consistent with {slugify(contributor)}'s observed contributions."
@@ -591,7 +601,7 @@ def render_skill_md(
     if not limitations:
         limitations.append("The profile is evidence-based but should not override current project instructions, tests, or explicit user requests.")
 
-    sample_subjects = summary["subjects"][:10]
+    sample_subjects = [sanitize_for_output(s) for s in summary["subjects"][:10]]
     sample_subject_text = "\n".join(f"- {subject}" for subject in sample_subjects) if sample_subjects else "- No commit subjects were available."
 
     content = f"""---
@@ -689,8 +699,8 @@ def write_diff_samples(repo: Path, commits: Sequence[Dict[str, Any]], out_path: 
     chunks = ["# Bounded diff samples", "", "Use these internally to refine style. Do not paste large excerpts into the final SKILL.md.", ""]
     total = len("\n".join(chunks).encode("utf-8"))
     for commit in commits[:12]:
-        header = f"\n## {commit['short_hash']} - {commit['subject']}\n\n"
-        diff = git(repo, ["show", "--format=fuller", "--stat", "--patch", "--find-renames", "--unified=40", commit["hash"]], check=False)
+        header = f"\n## {commit['short_hash']} - {sanitize_for_output(commit['subject'])}\n\n"
+        diff = git(repo, ["show", "--format=fuller", "--stat", "--patch", "--find-renames", "--unified=40", "--", commit["hash"]], check=False)
         piece = header + diff
         encoded_len = len(piece.encode("utf-8", errors="replace"))
         if total + encoded_len > max_bytes:
