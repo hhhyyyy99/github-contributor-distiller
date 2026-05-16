@@ -1,85 +1,45 @@
 # GitHub Contributor Distiller
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
 
-Distill a GitHub repository contributor's observable commit history into a reusable **contributor skill file** (`[username]/SKILL.md`). The output is a structured style guide that captures how a specific contributor writes code, commits, tests, and reviews — grounded entirely in real git evidence, not speculation.
+A single-file AI skill that distills a GitHub repository contributor's observable commit history into a reusable contributor skill file (`[username]/SKILL.md`). No scripts, no dependencies — just a SKILL.md that guides AI agents to do the work using git commands directly.
 
 ## What it does
 
-Given a repository and a contributor name/email/username, this tool:
+Given a repository and a contributor name/email/username, the AI agent:
 
 1. **Resolves identity** — scans `git log` for matching author/committer names and emails
 2. **Collects evidence** — gathers commit history, changed paths, file types, change sizes, commit message patterns
 3. **Distills patterns** — identifies stable, observable behaviors: modules commonly edited, testing discipline, commit granularity, naming conventions
 4. **Generates a skill file** — outputs a structured `[username]/SKILL.md` with actionable implementation rules, review checklists, and guardrails
 
-## Quick start
+## How to use
 
-```bash
-# From a GitHub URL
-python scripts/distill_contributor_skill.py \
-  --repo https://github.com/org/repo \
-  --contributor "Jane Zhang" \
-  --out ./distilled
-
-# From a local repo
-python scripts/distill_contributor_skill.py \
-  --repo /path/to/local/repo \
-  --contributor "Jane Zhang" \
-  --username janezhang \
-  --out ./distilled
-```
-
-Output: `distilled/janezhang/SKILL.md`
-
-## Usage
+Load `SKILL.md` into any AI coding agent (Claude, ChatGPT, Cursor, etc.), then ask:
 
 ```
-usage: distill_contributor_skill.py [-h] --repo REPO --contributor CONTRIBUTOR
-                                    [--username USERNAME] [--email EMAIL]
-                                    [--commit COMMIT] [--branch BRANCH]
-                                    [--since SINCE] [--until UNTIL]
-                                    [--max-commits N] [--out DIR]
-                                    [--write-evidence]
+Distill the contributor "Jane Zhang" from https://github.com/org/repo
 ```
 
-### Key options
+Or for a local repo:
 
-| Flag | Description |
-|---|---|
-| `--repo` | GitHub URL or local git repository path (required) |
-| `--contributor` | Name, username, or email to search in commit history (required) |
-| `--username` | Output directory slug; defaults to sanitized contributor name |
-| `--email` | Exact email to disambiguate identity; can be repeated |
-| `--commit` | Commit hash to anchor identity resolution; can be repeated |
-| `--branch` | Branch to scan; defaults to `--all` |
-| `--since` / `--until` | Date range filter for git log |
-| `--max-commits` | Max commits to analyze (default: 80) |
-| `--out` | Output parent directory (default: current dir) |
-| `--write-evidence` | Also emit `analysis.json` and `diff_samples.md` for refinement |
-
-### Examples
-
-**Anchor from a known commit:**
-```bash
-python scripts/distill_contributor_skill.py \
-  --repo https://github.com/facebook/react \
-  --contributor "Dan Abramov" \
-  --commit abc1234 \
-  --username gaearon \
-  --out ./distilled
+```
+Distill the contributor "janezhang" from /path/to/local/repo, output to ./distilled
 ```
 
-**Generate evidence files for manual refinement:**
-```bash
-python scripts/distill_contributor_skill.py \
-  --repo /path/to/repo \
-  --contributor "Jane Zhang" \
-  --username janezhang \
-  --out ./distilled \
-  --write-evidence
-```
+The agent will follow the SKILL.md workflow to run git commands, analyze history, and generate the output skill file.
+
+## How it works
+
+The SKILL.md contains a complete, step-by-step workflow:
+
+- **Identity resolution** — how to scan git history and match contributors by name, email, or commit hash
+- **Evidence collection** — what git commands to run and what patterns to extract
+- **Pattern distillation** — how to translate raw evidence into actionable guidance
+- **Output template** — the exact structure of the generated contributor skill file
+- **Security rules** — argument injection prevention and output sanitization
+
+The AI agent executes each step using native git commands. No external scripts or dependencies required.
 
 ## Output structure
 
@@ -97,32 +57,6 @@ The generated `[username]/SKILL.md` includes:
 | **Review checklist** | Pre-finalization checks |
 | **Guardrails** | Overfitting prevention, privacy boundaries |
 
-## Project structure
-
-```
-github-contributor-distiller/
-├── SKILL.md                              # Skill definition and workflow
-├── agents/
-│   └── openai.yaml                       # OpenAI agent interface config
-├── references/
-│   ├── analysis-rubric.md                # Evidence collection rubric
-│   └── distilled-skill-template.md       # Output template
-└── scripts/
-    └── distill_contributor_skill.py      # Main distillation script
-```
-
-## How identity resolution works
-
-The tool scans `author.name`, `author.email`, `committer.name`, and `committer.email` across the entire git history. It uses a scoring system:
-
-- Exact email match: 100
-- Exact name match: 95
-- Exact username (email local-part) match: 92
-- Compact name match (case/space insensitive): 90
-- Substring matches: 66-78
-
-When ambiguous, the tool outputs a candidate table and exits — it never guesses.
-
 ## Confidence levels
 
 | Commits | Confidence | Meaning |
@@ -131,17 +65,20 @@ When ambiguous, the tool outputs a candidate table and exits — it never guesse
 | 5-19 | **Medium** | Patterns may be concentrated in one area |
 | 20+ | **High** | Reliable cross-area patterns |
 
-## Integration with AI agents
+## Project structure
 
-The generated `SKILL.md` is designed to be consumed as a skill file by AI coding agents (Claude, ChatGPT, etc.). The YAML frontmatter (`name` + `description`) enables automatic skill discovery, and the structured sections provide concrete, actionable guidance rather than vague personality traits.
+```
+github-contributor-distiller/
+├── SKILL.md      # The entire skill — load this into any AI agent
+├── LICENSE        # MIT
+└── README.md      # You are here
+```
 
 ## Requirements
 
-- Python 3.8+
-- `git` available on PATH
+- An AI coding agent that can run git commands (Claude Code, ChatGPT with code interpreter, Cursor, etc.)
+- `git` available on the agent's PATH
 - For GitHub URLs: network access (public repos) or configured git credentials (private repos)
-
-No external Python packages required — uses only the standard library.
 
 ## Contributing
 

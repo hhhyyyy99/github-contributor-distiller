@@ -1,3 +1,0 @@
-interface:
-  display_name: "GitHub Contributor Distiller"
-  short_description: "Distills a repo contributor's commit history into [username]/SKILL.md."
