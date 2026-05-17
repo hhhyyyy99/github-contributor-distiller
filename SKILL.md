@@ -74,23 +74,28 @@ Use the author identity from this commit to anchor the search.
 
 ### Step 3: Collect evidence
 
-Once identity is resolved, gather matching commits:
+Two phases. Phase 2 depends on Phase 1 results.
+
+#### Phase 1: Full statistics
+
+Collect ALL matching commits — do not limit or sample at this stage.
 
 ```bash
+# All commit subjects and dates:
 git -C <repo> log --all --format="%H|%ad|%s" --date=short --author="<name_or_email>"
+
+# All numstat in one pass (much faster than per-commit git show):
+git -C <repo> log --all --numstat --format="" --author="<name_or_email>"
+
+# All branch references:
+git -C <repo> log --all --format="%D" --author="<name_or_email>"
+
+# All full commit messages (subject + body):
+git -C <repo> log --all --format="%H|%ad|%B---MSG_SEP---" --date=short --author="<name_or_email>" --no-merges
 ```
 
-Limit to 80 most recent matching commits.
-
-For each commit, collect:
-
-```bash
-# Changed files with additions/deletions:
-git -C <repo> show --numstat --format= <hash>
-```
-
-Aggregate across all matching commits:
-- Commit count and active date range
+Aggregate across ALL matching commits:
+- Commit count (total, non-merge, merge) and active date range
 - Top changed directories and files (by frequency)
 - File extensions and inferred languages/frameworks
 - Test, docs, config, migration, and CI file touches
@@ -98,30 +103,61 @@ Aggregate across all matching commits:
 - Typical change size: median files changed, average additions/deletions
 - Whether changes are localized (1-2 files) or cross-cutting (5+ files)
 - Repeated modules, APIs, package boundaries, or test locations
+- Branch naming patterns
+- Commit message language, body usage, tone
+
+#### Phase 2: Diff sampling (stratified)
+
+From Phase 1, select the **top 12 most-touched source files** (exclude generated files, i18n JSON, lock files, package.json, and other non-handwritten artifacts). If fewer than 12 qualifying files exist, use all of them.
+
+For each selected file, retrieve diffs from **3 different time periods** to capture evolution:
+
+```bash
+# For each file, get all commit hashes by this contributor:
+git -C <repo> log --all --format="%H|%ad" --date=short --author="<name_or_email>" -- <file>
+```
+
+From the list, pick one hash from the **earliest third**, one from the **middle third**, and one from the **most recent third**. This ensures patterns are captured across the full timeline, not just recent work.
+
+```bash
+# Then for each selected hash:
+git -C <repo> show --format="" <hash> -- <file>
+```
+
+Cap total diff output at ~2000 lines. If a single diff exceeds 250 lines, truncate it to the first 250 lines.
+
+From the sampled diffs, extract:
+- **Naming conventions**: interface/type/variable/function/class naming patterns (I-prefix, camelCase, PascalCase, etc.)
+- **Component patterns**: memo usage, displayName, props design, component decomposition
+- **State management**: query/mutation patterns, cache strategies, optimistic updates
+- **Error handling**: guard patterns, loading states, empty states, error boundaries
+- **Import organization**: grouping, ordering, alias usage
+- **Typing discipline**: interface vs type, explicit vs inferred, generic usage
+- **Comment style**: JSDoc, inline comments, TODO markers
+- **Code density**: single-line vs multi-line expressions, early returns, destructuring depth
 
 **Keep evidence bounded.** Do not include large raw code excerpts in the final output.
 
 ### Step 4: Distill patterns
 
-Translate evidence into practical guidance:
+Translate evidence into the dimensions used in the output template:
 
-| Evidence | Guidance |
+| Evidence source | Output dimension |
 |---|---|
-| Top directories | Where to place new code |
-| Median files/commit | How to scope changes |
-| Test file touches | Whether to add/update tests by default |
-| File naming patterns | Naming conventions for files/functions/classes |
-| Error handling in diffs | Error handling style |
-| Type annotations | Typing discipline |
-| Commit subjects | Commit message style |
-| Docs file touches | When to update documentation |
+| Diff: naming patterns | Naming & Typing |
+| Diff: component structure, memo, props | Component Patterns |
+| Diff: query/mutation/cache patterns | State Management |
+| Diff: guards, loading, empty states | Error & Edge Cases |
+| Numstat: files/commit, co-change patterns | Change Decomposition |
+| Commit messages: format, language, body | Commit & Workflow |
+| Numstat: directories, extensions | Tech Stack & Architecture |
 
 **Confidence labeling:**
-- Fewer than 5 commits: **low confidence** — treat all conclusions as tentative
-- 5-19 commits or single-area concentration: **medium confidence**
-- 20+ commits across meaningful areas: **high confidence**
+- Fewer than 5 non-merge commits: **low confidence** — treat all conclusions as tentative
+- 5-19 non-merge commits or single-area concentration: **medium confidence**
+- 20+ non-merge commits across meaningful areas: **high confidence**
 
-Avoid absolute wording unless a pattern is near-universal. Phrase weak findings as "often", "appears to", or "based on the sampled commits".
+**Evidence binding:** Every rule in the output must be traceable to specific observed patterns. If you cannot point to evidence, do not state it as a rule. Phrase weak findings as "often", "appears to", or "based on the sampled commits".
 
 ### Step 5: Render output
 
@@ -142,80 +178,126 @@ Use this exact structure for the generated `[username]/SKILL.md`:
 ````markdown
 ---
 name: <username-slug>
-description: repo-specific contributor guidance distilled from git commit history. use when working in <repo-name> and asked to implement, modify, review, or explain code in a style consistent with <contributor>'s observed contributions.
+description: contributor coding style for <repo-name>. distilled from <n> commits by <contributor>. use when implementing, modifying, or reviewing code in this repository to match <contributor>'s observed patterns.
 ---
 
-# <Contributor> contributor skill for <repo>
+# <Contributor> — <Repo>
 
-## Overview
+## Scope & Evidence
 
-Use this skill when working in `<repo>` and the user wants changes, review, or explanations aligned with `<contributor>`'s observed contribution style in this repository.
+| Field | Value |
+|---|---|
+| Repository | `<repo>` |
+| Identity | `<name> <primary email>` |
+| Commits sampled | <n> (<n> non-merge) from <first-date> to <last-date> |
+| Diff files sampled | <n> source files |
+| Confidence | <high/medium/low> |
 
-This is a repository-facing style guide, not a biography. It summarizes observable commit behavior only.
+<If low or medium confidence, state what areas are well-covered vs uncertain.>
 
-## Scope and evidence
+## Tech Stack & Architecture
 
-- Repository: <repo>
-- Contributor identity: <names/emails/usernames>
-- Commit sample: <n> commits from <first-date> to <last-date>
-- Confidence: <high/medium/low>
-- Limitations: <sampling notes>
+<Framework, language, key libraries, path aliases, build tools — inferred from touched file extensions and imports.>
 
-## How to use this skill
+**Directory responsibilities:**
+- `<dir/>` — <what this directory holds>
+- `<dir/>` — <what this directory holds>
+- ...
 
-Apply this skill after reading the user's request, current repository instructions, project docs, and relevant source files. Use it to bias decisions about change scope, file placement, tests, and review habits. Do not use it to override explicit user instructions or current code conventions.
+<Only list directories this contributor actually touches. Skip boilerplate directories.>
 
-## Repository orientation
+## Coding Style
 
-<Common directories, file types, modules, and responsibilities. List top directories, extensions, languages, and file roles.>
+### Naming & Typing
 
-## Contributor working style
+<Concrete rules extracted from diff sampling. Each rule must have an observed pattern.>
 
-<Observed change size, commit message style, test/doc/config habits. Include specific numbers from the evidence.>
+- **Interfaces**: <pattern, e.g. "I-prefix (IProps, IOptions, IActionVars)">
+- **Types vs interfaces**: <preference>
+- **Functions**: <casing, verb patterns>
+- **Variables**: <casing, abbreviation habits>
+- **Files**: <naming convention for component files, hook files, util files>
 
-Representative sampled commit subjects:
+### Component Patterns
 
-<10 sample commit subjects>
+<Component architecture rules from diff sampling.>
 
-## Implementation rules
+- **Memo strategy**: <when/how memo() is used>
+- **displayName**: <whether set, pattern>
+- **Props design**: <interface shape, destructuring, defaults>
+- **Composition**: <how components are composed — children, render props, hooks>
+- **Component size**: <typical lines per component>
 
-<Concrete rules for editing, code placement, naming, error handling, typing, comments, preserving existing patterns.>
+### State Management
 
-## Testing and validation
+<State and data flow patterns from diff sampling.>
 
-- Run the repository's documented test, lint, typecheck, or build commands when available.
-- When the change affects behavior, update nearby tests even if the sampled history has weak test evidence.
-- If tests are hard to run, clearly state what was and was not validated.
-- Keep generated changes focused enough that failures can be traced to the requested work.
+- **Server state**: <TanStack Query / SWR / other — usage patterns>
+- **Mutations**: <how mutations are structured, optimistic updates>
+- **Cache strategy**: <staleTime, invalidation patterns>
+- **Local state**: <useState, useReducer, context usage patterns>
+- **Shared logic**: <hook extraction patterns — when and how>
 
-## Review checklist
+### Error & Edge Cases
 
-- The changed files are in the expected repository area for this kind of work.
-- The diff avoids unrelated formatting, renames, or refactors.
-- Naming, imports, typing, logging, comments, and error handling match surrounding code.
-- Behavior changes include appropriate tests or an explicit validation note.
-- Docs/config/CI updates are included when the code change makes them necessary.
-- Commit messages mirror the repository's recent style.
+<How this contributor handles error states, loading, empty, and edge cases.>
+
+- **Loading**: <skeleton, spinner, disabled UI>
+- **Empty states**: <component used, messaging pattern>
+- **Auth guards**: <guest mode, login prompts>
+- **Error boundaries**: <try/catch, error states, fallback UI>
+
+## Commit & Workflow
+
+### Message Style
+
+- **Format**: <conventional commit strictness level>
+- **Language**: <English / Chinese / mixed>
+- **Scope usage**: <when scope is included, format>
+- **Body usage**: <never / for breaking changes / frequent>
+- **Tone**: <imperative / descriptive, terse / verbose>
+
+### Change Decomposition
+
+- **Typical commit size**: <median files changed>
+- **Granularity**: <single-concern vs multi-concern commits>
+- **Refactor approach**: <inline vs separate commit, hook extraction triggers>
+- **Feature scope**: <how a feature is broken into commits>
+
+### Branch Strategy
+
+- **Naming**: <pattern, e.g. `feature/<name>/<topic>`>
+- **Merge style**: <merge commits / squash / rebase>
+- **Integration flow**: <main → dev → test → pre or other>
+
+## Quick Reference
+
+<Concise do/don't table. Maximum 8 rows. Derived from the strongest observed patterns.>
+
+| Do | Don't |
+|---|---|
+| <observed positive pattern> | <observed anti-pattern> |
+| ... | ... |
 
 ## Guardrails
 
-- Do not infer personal traits, intent, availability, seniority, or private preferences from commit history.
-- Do not copy large historical code excerpts into responses.
-- Treat this profile as a set of tendencies, not absolute rules.
-- When evidence is sparse or conflicting, say so and prioritize the current codebase.
+- Treat these patterns as tendencies, not absolute rules.
+- When evidence is sparse or conflicting, prioritize the current codebase over this profile.
+- Never copy large historical code excerpts into responses.
 ````
 
 ---
 
 ## Quality Rules
 
-- Prefer concise, actionable rules over biography.
-- Ground every strong statement in commit evidence.
-- Never claim the contributor "always" does something unless the evidence is overwhelming.
-- Do not expose secrets, tokens, or private data found in history.
-- Do not paste large code excerpts into the generated skill.
-- Keep the generated skill useful even when the contributor has few commits by emphasizing uncertainty and repository conventions.
-- Sanitize any git metadata (commit subjects, author names, emails) embedded in the output: strip HTML comments, script tags, and control characters.
+- **Evidence binding**: Every rule must trace to a specific observed pattern from commit history or diff sampling. No speculation.
+- **Concise and actionable**: Prefer short, concrete rules over prose descriptions. The output will be consumed by AI agents, not read by humans for fun.
+- **No biography**: Do not describe the contributor's career, role, seniority, or personality. Only observable code behavior.
+- **Confidence-aware**: Fewer than 5 commits → all rules are tentative. Fewer than 20 commits → caveat concentrated areas. 20+ commits → state patterns with confidence.
+- **No secrets**: Do not expose tokens, private data, or internal URLs found in history.
+- **No large excerpts**: Do not paste large code blocks into the generated skill. Summarize patterns instead.
+- **Sanitize metadata**: Strip HTML comments, script tags, and control characters from any git metadata embedded in the output.
+- **Deduplicate**: If the contributor has multiple email aliases, consolidate all evidence under one profile. Do not split findings across aliases.
 
 ## Security
 
