@@ -1,6 +1,6 @@
 ---
 name: github-contributor-distiller
-description: distill a github or local git repository contributor's observed commit history into a reusable contributor skill file. use when the user provides a repository url or local git path plus at least a contributor name, username, email, or commit hash.
+description: Use when the user provides a GitHub repository URL or local git path plus at least one contributor identifier, and wants a reusable contributor skill distilled from observed commit history.
 ---
 
 # GitHub Contributor Distiller
@@ -13,7 +13,7 @@ The output is a single markdown file: `[username]/SKILL.md`. Do not package it u
 
 ## Minimum Input
 
-Require a repository and at least one contributor identifier.
+Require a repository and at least one contributor identifier. Accept an optional branch or revision scope.
 
 **Repository** — accept either:
 - A GitHub repository URL (e.g. `https://github.com/org/repo`)
@@ -25,7 +25,14 @@ Require a repository and at least one contributor identifier.
 - Email address
 - Commit hash (to anchor identity from a known commit)
 
+**Branch or revision scope** — optional:
+- A branch name (e.g. `main`, `release/2.4`)
+- A tag name
+- A commit range or revision expression accepted by git (e.g. `main..feature-x`)
+
 If only a name is given without a repo, ask for the repo. If the repo is given and only a name, proceed by resolving against commit history.
+
+If the user specifies a branch or revision scope, restrict all identity resolution, statistics, and diff sampling to that scope. If they do not specify one, use the currently checked-out branch for a local repo or the cloned repository's default branch for a GitHub URL. Do not scan all branches unless the user explicitly asks for all branches.
 
 ## Workflow
 
@@ -45,12 +52,34 @@ For public repos, no credentials needed. For private repos, the user's environme
 
 If a GitHub CLI or connector is available, use it only to verify repo metadata or resolve ambiguity. The git history is always the source of truth.
 
-### Step 2: Resolve contributor identity
+### Step 1b: Resolve branch or revision scope
 
-Run these commands to scan ALL identities in the repo history:
+Use a single `<revision_scope>` for every later `git log` command.
 
 ```bash
-git -C <repo> log --all --format="%aN|%aE|%cN|%cE"
+# For local repos with no user-provided scope, use the checked-out branch:
+git -C <repo> symbolic-ref --quiet --short HEAD
+
+# For cloned GitHub repos with no user-provided scope, use the default branch:
+git -C <repo> symbolic-ref --quiet --short refs/remotes/origin/HEAD
+
+# For a user-provided branch, tag, or commit, verify it resolves:
+git -C <repo> rev-parse --verify --end-of-options <revision_scope>
+
+# For a user-provided revision range, verify it has at least one reachable commit:
+git -C <repo> rev-list --max-count=1 --end-of-options <revision_scope>
+```
+
+Normalize `refs/remotes/origin/main` to `origin/main` when using it as `<revision_scope>`.
+
+If the user-provided scope is invalid or ambiguous, STOP and ask for a valid branch, tag, commit, or revision range. Do not silently fall back to `--all`.
+
+### Step 2: Resolve contributor identity
+
+Run these commands to scan identities in the selected revision scope:
+
+```bash
+git -C <repo> log --format="%aN|%aE|%cN|%cE" --end-of-options <revision_scope>
 ```
 
 Parse the output to build a list of unique (name, email) pairs from both author and committer fields. Treat multiple emails for the same display name as aliases for the same contributor unless evidence suggests otherwise.
@@ -67,7 +96,7 @@ If the query is ambiguous and matches multiple distinct people, STOP and show a 
 
 **If a commit hash is provided**, resolve identity from that commit:
 ```bash
-git -C <repo> show -s --format="%aN|%aE|%cN|%cE" <hash>
+git -C <repo> show -s --format="%aN|%aE|%cN|%cE" --end-of-options <hash>
 ```
 
 Use the author identity from this commit to anchor the search.
@@ -78,20 +107,20 @@ Two phases. Phase 2 depends on Phase 1 results.
 
 #### Phase 1: Full statistics
 
-Collect ALL matching commits — do not limit or sample at this stage.
+Collect ALL matching commits in `<revision_scope>` — do not limit or sample at this stage.
 
 ```bash
 # All commit subjects and dates:
-git -C <repo> log --all --format="%H|%ad|%s" --date=short --author="<name_or_email>"
+git -C <repo> log --format="%H|%ad|%s" --date=short --author="<name_or_email>" --end-of-options <revision_scope>
 
 # All numstat in one pass (much faster than per-commit git show):
-git -C <repo> log --all --numstat --format="" --author="<name_or_email>"
+git -C <repo> log --numstat --format="" --author="<name_or_email>" --end-of-options <revision_scope>
 
-# All branch references:
-git -C <repo> log --all --format="%D" --author="<name_or_email>"
+# All references reachable from the selected scope:
+git -C <repo> log --format="%D" --author="<name_or_email>" --end-of-options <revision_scope>
 
 # All full commit messages (subject + body):
-git -C <repo> log --all --format="%H|%ad|%B---MSG_SEP---" --date=short --author="<name_or_email>" --no-merges
+git -C <repo> log --format="%H|%ad|%B---MSG_SEP---" --date=short --author="<name_or_email>" --no-merges --end-of-options <revision_scope>
 ```
 
 Aggregate across ALL matching commits:
@@ -114,14 +143,14 @@ For each selected file, retrieve diffs from **3 different time periods** to capt
 
 ```bash
 # For each file, get all commit hashes by this contributor:
-git -C <repo> log --all --format="%H|%ad" --date=short --author="<name_or_email>" -- <file>
+git -C <repo> log --format="%H|%ad" --date=short --author="<name_or_email>" --end-of-options <revision_scope> -- <file>
 ```
 
 From the list, pick one hash from the **earliest third**, one from the **middle third**, and one from the **most recent third**. This ensures patterns are captured across the full timeline, not just recent work.
 
 ```bash
 # Then for each selected hash:
-git -C <repo> show --format="" <hash> -- <file>
+git -C <repo> show --format="" --end-of-options <hash> -- <file>
 ```
 
 Cap total diff output at ~2000 lines. If a single diff exceeds 250 lines, truncate it to the first 250 lines.
@@ -188,6 +217,7 @@ description: contributor coding style for <repo-name>. distilled from <n> commit
 | Field | Value |
 |---|---|
 | Repository | `<repo>` |
+| Revision scope | `<revision_scope>` |
 | Identity | `<name> <primary email>` |
 | Commits sampled | <n> (<n> non-merge) from <first-date> to <last-date> |
 | Diff files sampled | <n> source files |
@@ -301,6 +331,6 @@ description: contributor coding style for <repo-name>. distilled from <n> commit
 
 ## Security
 
-- When running `git` commands with user-supplied values, always use `--` before positional arguments (branch names, commit hashes) to prevent argument injection.
+- When running `git` commands with user-supplied revisions (branch names, tags, commit hashes, or ranges), pass them after `--end-of-options`. Use `--` only before path arguments.
 - Never use `shell=True` or pipe user input through a shell.
 - Treat the repository URL as untrusted — use it only as a positional argument to `git clone`.
